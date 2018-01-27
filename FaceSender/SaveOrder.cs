@@ -1,46 +1,34 @@
-using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Threading.Tasks;
+using System.IO;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.WebJobs.Host;
+using Newtonsoft.Json;
 
 namespace FaceSender
 {
     public static class SaveOrder
     {
         [FunctionName("SaveOrder")]
-        public static async Task<HttpResponseMessage> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get",   "post", Route = null)]HttpRequestMessage req, 
-            [Table("Orders", Connection="StorageConnection")]IAsyncCollector<PhotoOrder> ordersTable,
-            TraceWriter log)
+        public static IActionResult Run([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)]HttpRequest req,
+            [Table("Orders", Connection = "StorageConnection")]ICollector<PhotoOrder> ordersTable, TraceWriter log)
         {
-            // parse query parameter
-            string name = req.GetQueryNameValuePairs()
-                .FirstOrDefault(q => string.Compare(q.Key, "name", true) == 0)
-                .Value;
-
-            // Get request body
-            dynamic data = await req.Content.ReadAsAsync<object>();
-
-            // Set name to query string or body data
-            name = name ?? data?.name;
-
-            var item = new PhotoOrder
+            try
             {
-                PartitionKey = "1",
-                RowKey = name,                
-                Name = name
-            };
+                string requestBody = new StreamReader(req.Body).ReadToEnd();
+                PhotoOrder orderData = JsonConvert.DeserializeObject<PhotoOrder>(requestBody);
+                orderData.PartitionKey = System.DateTime.UtcNow.DayOfYear.ToString();
+                orderData.RowKey = orderData.FileName;
+                ordersTable.Add(orderData);
+            }
+            catch (System.Exception ex)
+            {
+                log.Error("Something went wrong", ex);
+                return new BadRequestObjectResult("Something went wrong");
+            }
 
-            await ordersTable.AddAsync(item);
-
-            return name == null
-                ? req.CreateResponse(HttpStatusCode.BadRequest, "Please pass a name on the query string or in the request body")
-                : req.CreateResponse(HttpStatusCode.OK, "Hello " + name);
-
-            
+            return (ActionResult)new OkObjectResult($"Order processed");
         }
     }
 }
