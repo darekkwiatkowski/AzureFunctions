@@ -13,7 +13,7 @@ namespace FaceSender
         [FunctionName("SaveOrder")]
         public static async Task<HttpResponseMessage> Run(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get",   "post", Route = null)]HttpRequestMessage req, 
-            [Table("Orders", Connection="StorageConnection")]ICollector<object> ordersTable,
+            [Table("Orders", Connection="StorageConnection")]IAsyncCollector<PhotoOrder> ordersTable,
             TraceWriter log)
         {
             // parse query parameter
@@ -27,7 +27,14 @@ namespace FaceSender
             // Set name to query string or body data
             name = name ?? data?.name;
 
-            ordersTable.Add(data);
+            var item = new PhotoOrder
+            {
+                PartitionKey = "1",
+                RowKey = name,                
+                Name = name
+            };
+
+            await ordersTable.AddAsync(item);
 
             return name == null
                 ? req.CreateResponse(HttpStatusCode.BadRequest, "Please pass a name on the query string or in the request body")
